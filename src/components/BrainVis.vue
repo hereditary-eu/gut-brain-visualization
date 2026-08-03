@@ -33,6 +33,11 @@ const atlasCorrection = ref<TransformCorrection>({'position':[0,-6.5,8],
                                                       'scale':[1,1,1] 
 })
 
+// const atlasCorrection = ref<TransformCorrection>({'position':[0,0,0],
+//                                                       'rotation':[0,0,0],
+//                                                       'scale':[1,1,1] 
+// })
+
 function onTransformCorrection(newTransformCorrection : TransformCorrection){
     atlasCorrection.value = structuredClone(toRaw(newTransformCorrection));
 }
@@ -272,8 +277,9 @@ function extract3DNifti(itkImage4D:any, index:number){
                     :lut="lut"
                     @on-transform-correction="onTransformCorrection" 
                     ref="axialPlane"></Slicer>
-            <Volume :image-data="imageData" 
+            <Volume :image-data="imageData"
                     :atlas-correction="atlasCorrection"
+                    :max-value="props.maxValue"
                     :brain-atlas="referenceAtlas" class="w-100 h-100 border-start"></Volume>
         </div>
     </div>

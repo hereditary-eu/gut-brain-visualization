@@ -26,6 +26,8 @@ import InteractorStyleImageNoJump from '../../vtk-derivatives/InteractorStyleIma
 //import IRenderWindowInteractorEvent from '@kitware/vtk.js/Rendering/Core/RenderWindowInteractor';
 
 import { MedicalPlanes } from '../../utils/consts'
+import { zScoreInterpolator } from '../../utils/d3Utils';
+import { applyInterpolator } from '../../utils/vtkUtils';
 import Outline from '../../vtk-derivatives/Outline';
 import { Resolve } from '@kitware/vtk.js/Rendering/Core/Mapper/CoincidentTopologyHelper';
 import numbro from 'numbro';
@@ -80,6 +82,8 @@ let regionAtlasActor: vtkImageSlice;
 let imageMapper: vtkImageMapper;
 let referenceAtlasMapper: vtkImageMapper;
 let regionAtlasMapper: vtkImageMapper;
+
+const imageColorFunction = vtkColorTransferFunction.newInstance();
 let imageOutline: Outline;
 //let atlasOutline: Outline;
 
@@ -92,6 +96,17 @@ const imageVisbility = ref<boolean>(true);
 watch(()=> props.referenceAtlas, setupReferenceAtlas)
 watch(()=> props.regionAtlas, setupRegionAtlas)
 watch(()=> props.atlasCorrection, changeTransformCorrection, {deep:true})
+watch(()=> props.maxValue, updateColorMap)
+
+// Sample the shared d3 z-score scale into the vtk transfer function. The image
+// property is set to use the transfer function range (instead of the color
+// window/level) so the scale domain is defined in one place only.
+function updateColorMap(){
+  applyInterpolator(imageColorFunction, zScoreInterpolator, [-props.maxValue, props.maxValue])
+  if(renderWindow){
+    renderWindow.render()
+  }
+}
 
 function setupReferenceAtlas(){
   if (referenceAtlasMapper && props.referenceAtlas) {
@@ -145,8 +160,7 @@ function setupImageData(){
     imageMapper.setInputData(props.imageData);
     imageOutline.setInputData(props.imageData);
 
-    imageActor.getProperty().setColorWindow(props.maxValue+props.maxValue);
-    imageActor.getProperty().setColorLevel(0);
+    updateColorMap();
 
     alignCamera(imageMapper)
     setVisiblities();
@@ -252,23 +266,25 @@ onMounted(()=>{
   regionAtlasMapper.setRelativeCoincidentTopologyPolygonOffsetParameters(-1, -1);
   regionAtlasMapper.setRelativeCoincidentTopologyPointOffsetParameters(-1, -1);
 
-  const rgb = vtkColorTransferFunction.newInstance();
-  rgb.addRGBPoint(-30, 0.647, 0, 0.149);
-  rgb.addRGBPoint(0, 0.968, 0.972, 0.678);
-  rgb.addRGBPoint(30, 0, 0.407, 0.215);
-
   const ofun = vtkPiecewiseFunction.newInstance();
   ofun.addPoint(-2, 1);
   ofun.addPoint(0, 0);
   ofun.addPoint(2, 1);
 
   imageActor = vtkImageSlice.newInstance();
-  imageActor.getProperty().setRGBTransferFunction(0, rgb);
+  imageActor.getProperty().setRGBTransferFunction(0, imageColorFunction);
+  imageActor.getProperty().setUseLookupTableScalarRange(true);
   imageActor.getProperty().setPiecewiseFunction(0, ofun);
-  imageActor.setMapper(imageMapper);     
+  imageActor.setMapper(imageMapper);
 
   referenceAtlasActor = vtkImageSlice.newInstance();
-  referenceAtlasActor.setMapper(referenceAtlasMapper);    
+  // Halve the grayscale brightness (vtk defaults to window 255 / level 127.5) so
+  // the atlas recedes behind the z-scores. Doubling the window without changing
+  // the actor opacity keeps it in the opaque pass, where it can still be seen
+  // through the transparent parts of the z-score slice.
+  referenceAtlasActor.getProperty().setColorWindow(510);
+  referenceAtlasActor.getProperty().setColorLevel(255);
+  referenceAtlasActor.setMapper(referenceAtlasMapper);
   
   // region color coding
   const regionColors = vtkColorTransferFunction.newInstance();
@@ -328,6 +344,7 @@ onMounted(()=>{
 })
 
 onBeforeUnmount(() => {
+    imageColorFunction.delete();
     imageActor.delete();
     imageMapper.delete();
     referenceAtlasActor.delete();

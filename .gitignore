@@ -27,3 +27,5 @@ dist-ssr
 
 test_data
 src/assets/data
+
+niftiOut_mi*

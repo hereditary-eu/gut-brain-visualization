@@ -17,12 +17,16 @@ import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';
 import { SlabTypes } from '@kitware/vtk.js/Rendering/Core/ImageResliceMapper/Constants';
 import { TransformCorrection } from './Slicer.vue';
 
+import { zScoreInterpolator } from '../../utils/d3Utils';
+import { applyInterpolator } from '../../utils/vtkUtils';
+
 const vtkContainer = ref<HTMLElement>();
 
-const props = defineProps<{ 
+const props = defineProps<{
     imageData : vtkImageData | undefined,
-    brainAtlas: vtkImageData | undefined,        
+    brainAtlas: vtkImageData | undefined,
     atlasCorrection: TransformCorrection,
+    maxValue: number,
 }>()
 
 let fullRenderWindow : vtkFullScreenRenderWindow;
@@ -34,6 +38,8 @@ let volumeMapper: vtkVolumeMapper;
 let imageActor: vtkImageSlice;
 let imageMapper: vtkImageResliceMapper;
 let imageSlicePlane: vtkPlane;
+
+const ctfun = vtkColorTransferFunction.newInstance();
 
 const atlasVisbility = ref<boolean>(true);
 const imageVisbility = ref<boolean>(true);
@@ -72,6 +78,15 @@ function setupBrainAtlas(){
 }
 
 watch(()=> props.imageData, setupVolumeData)
+watch(()=> props.maxValue, updateColorMap)
+
+// Sample the shared d3 z-score scale into the vtk transfer function. The volume
+// mapper looks up colors on the transfer function's own range, so it is built
+// over the data range directly.
+function updateColorMap(){
+    applyInterpolator(ctfun, zScoreInterpolator, [-props.maxValue, props.maxValue])
+    render()
+}
 
 function setupVolumeData(){
     if(props.imageData){
@@ -137,10 +152,7 @@ onMounted(()=>{
     sliceRenderer.addActor(imageActor);
 
     // create color and opacity transfer functions
-    const ctfun = vtkColorTransferFunction.newInstance();
-    ctfun.addRGBPoint(-30, 0.647, 0, 0.149);
-    ctfun.addRGBPoint(0, 0.968, 0.972, 0.678);
-    ctfun.addRGBPoint(30, 0, 0.407, 0.215);
+    applyInterpolator(ctfun, zScoreInterpolator, [-props.maxValue, props.maxValue])
 
     const ofun = vtkPiecewiseFunction.newInstance();
     ofun.addPoint(-20, 1.0);
@@ -152,7 +164,11 @@ onMounted(()=>{
     volumeActor.getProperty().setScalarOpacityUnitDistance(0, 4.5);
     volumeActor.getProperty().setInterpolationTypeToFastLinear();
 
-    imageActor.getProperty().setOpacity(0.5);
+    // Halve the grayscale brightness (vtk defaults to window 255 / level 127.5) so
+    // the atlas slice recedes behind the volume, without the actor leaving the
+    // opaque pass the way a reduced opacity would.
+    imageActor.getProperty().setColorWindow(510);
+    imageActor.getProperty().setColorLevel(255);
 
     setupBrainAtlas()
     setupVolumeData()
@@ -166,6 +182,7 @@ function alignSlice(){
 }
 
 onBeforeUnmount(() => {
+    ctfun.delete();
     volumeActor.delete();
     volumeMapper.delete();
     fullRenderWindow.delete();

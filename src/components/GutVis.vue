@@ -13,12 +13,11 @@
 <script setup lang="ts">
 import {onMounted, ref, watch} from 'vue';
 
-import { select, 
+import { select,
          scaleBand,
          Selection,
-         scaleSequential,
-         interpolateRdYlGn,
          BaseType } from "d3";
+import { zScoreScale, zScoreThreshold } from '../utils/d3Utils.ts'
 import Tooltip from './Tooltip.vue'
 import RangeLegend from './visualization-components/RangeLegend.vue'
 import { TooltipData } from './Tooltip.vue'
@@ -54,9 +53,9 @@ const legendSize = ref<[number,number]>([20,2*(squareSizeY+1.5)])
 const tooltipPos = ref<Array<number>>([0,0])
 const tooltipInfo = ref<TooltipData | null>(null)
 
-const thresholdValues = ref<[number,number]>([-2.3,2.3])
+const thresholdValues = ref<[number,number]>([-zScoreThreshold,zScoreThreshold])
 
-const color = scaleSequential([-props.max,props.max], interpolateRdYlGn)
+const color = zScoreScale(props.max)
 
 const x = scaleBand(['lorem','ipsem'], [plotOffset.x, plotOffset.x+2*(squareSizeX+1.5)]);
 const y = scaleBand(['1','2'], [plotOffset.y, plotOffset.y+2*(squareSizeY+1.5)]);
@@ -224,11 +223,11 @@ function setupPlot(){
         .attr("transform", (d:any) => `translate(${x(d.x)},0)`)
         .attr("width", squareSizeX)
         .attr("height", squareSizeY)
-        .attr("fill", (d:any) => { 
-          return d.value > -2.3 && d.value < 2.3  ? 'whitesmoke' :
+        .attr("fill", (d:any) => {
+          return d.value > -zScoreThreshold && d.value < zScoreThreshold  ? 'whitesmoke' :
                 color(Number(d.value))
         })
-        .on('mouseover',function(this:any, e:any, d:any){
+        .on('pointerover',function(this:any, e:any, d:any){
           let component = d.y
           tooltipPos.value = [e.offsetX, e.offsetY]
           tooltipInfo.value = formatTooltipInfo(d)
@@ -252,10 +251,10 @@ function setupPlot(){
               })
               .raise()
         })
-        .on("mousemove", (e:any)=>{
+        .on("pointermove", (e:any)=>{
           tooltipPos.value = [e.offsetX, e.offsetY]
         })
-        .on("mouseout", function(this:any,_,d:any){
+        .on("pointerout", function(this:any,_,d:any){
           let component = d.y
           tooltipPos.value = [Number.MAX_VALUE, Number.MAX_VALUE]
           tooltipInfo.value = null
