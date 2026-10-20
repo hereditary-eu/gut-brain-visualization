@@ -71,6 +71,17 @@ let columnLabels : Selection<BaseType | SVGTextElement, string, SVGGElement, any
 let rowLabels : Selection<BaseType | SVGTextElement, string, SVGGElement, any>;
 let columnGroups : Selection<SVGGElement | BaseType, string, SVGGElement, any>;
 
+// Highlight overlay. The indicators are drawn as their own marks on top of the plot
+// rather than as classes on the cells/rows themselves, because at the scale the
+// viewBox renders at, a neighbour painted later overdraws them. The old fix was to
+// raise() the hovered nodes, but that re-inserts the node under the pointer and makes
+// the browser fire a spurious pointerout, which is what left highlights stuck.
+let highlightLayer! : Selection<SVGGElement, any, null, any>;
+let activeRowHighlight! : Selection<SVGRectElement, any, null, any>;
+let rowHighlight! : Selection<SVGRectElement, any, null, any>;
+let columnHighlight! : Selection<SVGRectElement, any, null, any>;
+let cellHighlight! : Selection<SVGRectElement, any, null, any>;
+
 function formatTooltipInfo(d:BlockDataFormat){
    return {
     "Component":{
@@ -89,16 +100,7 @@ function formatTooltipInfo(d:BlockDataFormat){
 }
 
 watch(()=> props.activeComponent, (activeComponent)=>{
-  if(rows){
-    rows
-      .attr('class', (d:any)=>{
-              return d[0].y == activeComponent ? "group-active-border" : "group-no-border"
-            })
-
-    rows
-      .filter((d:any)=>d[0].y==activeComponent)
-        .raise()
-  }
+  showActiveRowHighlight(activeComponent)
 })
 
 watch(thresholdValues, (tvalues)=>{
@@ -112,6 +114,39 @@ watch(thresholdValues, (tvalues)=>{
   }
 })
 
+// Hidden via display:none rather than a zero size, so the overlay never contributes
+// to the getBBox() call that resizeOnContent() uses to fit the viewBox.
+function hideHoverHighlights(){
+  if(!highlightLayer){ return }
+  cellHighlight.attr('display', 'none')
+  rowHighlight.attr('display', 'none')
+  columnHighlight.attr('display', 'none')
+}
+
+function showActiveRowHighlight(component : string | undefined){
+  if(!highlightLayer || !props.xRange){ return }
+  const yPos = component === undefined ? undefined : y(component)
+  if(yPos === undefined){
+    activeRowHighlight.attr('display', 'none')
+    return
+  }
+  activeRowHighlight
+    .attr('display', null)
+    .attr('class', "group-active-border")
+    .attr('x', plotOffset.x)
+    .attr('y', yPos)
+    .attr('width', props.xRange.length*(squareSizeX+1.5)-1.5)
+    .attr('height', squareSizeY)
+}
+
+// Safety net for leaving the chart: whatever the per-cell handlers left behind,
+// reset it here so a highlight can never outlive the pointer.
+function clearHighlights(){
+  tooltipPos.value = [Number.MAX_VALUE, Number.MAX_VALUE]
+  tooltipInfo.value = null
+  hideHoverHighlights()
+}
+
 onMounted(()=>{
   if(d3Content.value && plotContentElement.value){
     if(plotContainer.value){
@@ -121,7 +156,8 @@ onMounted(()=>{
 
     svg = select<SVGSVGElement,any>(d3Content.value)
       .attr("preserveAspectRatio", "xMinYMin meet")
-      .attr("viewBox", [0, 0, width, height]);
+      .attr("viewBox", [0, 0, width, height])
+      .on("pointerleave", clearHighlights);
     
     plotContent = select<SVGGElement, any>(plotContentElement.value)
 
@@ -197,6 +233,7 @@ function setupPlot(){
     
     let yrangelength = props.yRange.length
     let yrangemin = props.yRange[0]
+    let xrangelength = props.xRange.length
 
     columnGroups = columnGroupContainer
       .selectAll('g')
@@ -227,45 +264,43 @@ function setupPlot(){
           return d.value > -zScoreThreshold && d.value < zScoreThreshold  ? 'whitesmoke' :
                 color(Number(d.value))
         })
-        .on('pointerover',function(this:any, e:any, d:any){
-          let component = d.y
+        .on('pointerover',function(e:any, d:any){
           tooltipPos.value = [e.offsetX, e.offsetY]
           tooltipInfo.value = formatTooltipInfo(d)
 
-          select(`#${d.x.replace(/^[^a-z]+|[^\w:.-]+/gi, "")}-group`)
-              .attr('class', (d:any)=>{
-                return d ? "group-hover-border" : "group-no-border"
-              })
-              .raise()
+          // Move the overlay marks rather than restyling (and reordering) the cells
+          // themselves, so the hovered node is never touched while the pointer is on it.
+          cellHighlight
+            .attr('display', null)
+            .attr('class', "rect-hover-border")
+            .attr('x', x(d.x) ?? 0)
+            .attr('y', y(d.y) ?? 0)
+            .attr('width', squareSizeX)
+            .attr('height', squareSizeY)
 
-          select(this)
-              .attr('class', (d:any)=>{
-                return d.value ? "rect-hover-border" : "rect-no-border"
-              })
-              .raise()
+          rowHighlight
+            .attr('display', null)
+            .attr('class', "group-hover-border")
+            .attr('x', plotOffset.x)
+            .attr('y', y(d.y) ?? 0)
+            .attr('width', xrangelength*(squareSizeX+1.5)-1.5)
+            .attr('height', squareSizeY)
 
-          select(this.parentNode)
-              .attr('class', (d:any)=>{
-                return d ? "group-hover-border" : 
-                            component != props.activeComponent ? "group-no-border" : "group-active-border"
-              })
-              .raise()
+          columnHighlight
+            .attr('display', null)
+            .attr('class', "group-hover-border")
+            .attr('x', x(d.x) ?? 0)
+            .attr('y', y(yrangemin) ?? 0)
+            .attr('width', squareSizeX)
+            .attr('height', yrangelength*(squareSizeY+1.5)-1.5)
         })
         .on("pointermove", (e:any)=>{
           tooltipPos.value = [e.offsetX, e.offsetY]
         })
-        .on("pointerout", function(this:any,_,d:any){
-          let component = d.y
+        .on("pointerout", ()=>{
           tooltipPos.value = [Number.MAX_VALUE, Number.MAX_VALUE]
           tooltipInfo.value = null
-          select(this)
-              .attr('class', "rect-no-border")
-          
-          select(`#${d.x.replace(/^[^a-z]+|[^\w:.-]+/gi, "")}-group`)
-            .attr('class', "group-no-border")
-
-          select(this.parentNode)
-              .attr('class', props.activeComponent != component ? "group-no-border" : "group-active-border")
+          hideHoverHighlights()
         })
         .on('click', function(this:any,_,d:any){
           emit('onActive',d.y)
@@ -335,6 +370,20 @@ function setupPlot(){
           .attr("text-anchor", "start")
           .attr('font-weight', 'bold')
           .text('Click a row label to sort or click a row cell to select a component')
+
+    // Appended last so the indicators paint over every cell, and inert so they can
+    // never become the pointer target.
+    highlightLayer = plotContent.append('g')
+      .attr('pointer-events', 'none')
+      .attr('fill', 'none')
+
+    activeRowHighlight = highlightLayer.append('rect')
+    columnHighlight = highlightLayer.append('rect')
+    rowHighlight = highlightLayer.append('rect')
+    cellHighlight = highlightLayer.append('rect')
+
+    hideHoverHighlights()
+    showActiveRowHighlight(props.activeComponent)
   }
 }
 

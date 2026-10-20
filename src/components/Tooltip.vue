@@ -48,5 +48,8 @@ const tooltipTransform = computed(() => {
   left:10px;
   z-index: 999;
   font-size: 0.8rem;
+  /* Display only: never let the tooltip become the hit target, or it steals the
+     pointer from the cell it describes and flickers the hover handlers. */
+  pointer-events: none;
 }
 </style>

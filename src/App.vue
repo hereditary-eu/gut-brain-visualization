@@ -282,6 +282,11 @@ function loadModalityContribution(e:DragEvent){
         <HorizontalBarChart v-else :distribution="modalityContribution" :modality="currentModality" :modalities="modalities" @onModalitySelect="(value:Modalities|undefined)=>currentModality=value?value:currentModality"/>
       </div>
     </div>
+    <div class="d-flex flex-grow-0 flex-shrink-1 h-100 p-1">
+      <div class="bg-info justify-content-center h-100 p-2 card" style="width: 18rem;">
+        Research prototype of the HEREDITARY project. Not a medical device and not for clinical use. Do not enter personal or patient data.
+      </div>
+    </div>
   </div>
   <div class="p-1 h-40 w-100">
     <BrainVis :class="{'active': Number(currentModality) > 0}" :activeComponent="activeComponent" :modality="currentModality" :components="components" :maxValue="maxGutComponentValue" class="d-flex justify-content-center align-items-center p-0 card h-100"/>
